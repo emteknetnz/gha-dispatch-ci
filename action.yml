@@ -3,8 +3,6 @@ description: GitHub Action to trigger ci.yml workflow_dispatch event via GitHub 
 
 runs:
   using: composite
-  env:
-    RUN_BRANCHES_ON_PREVIOUS_MAJOR: false
   steps:
 
     - name: Get type
@@ -38,6 +36,7 @@ runs:
     - name: Check if should dispatch workflow
       shell: bash
       env:
+        RUN_BRANCHES_ON_PREVIOUS_MAJOR: false
         TYPE: ${{ steps.gettype.outputs.type }}
       run:
         major_type=$(echo $TYPE | cut -d "," -f 1)
