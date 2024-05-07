@@ -3,6 +3,8 @@ description: GitHub Action to trigger ci.yml workflow_dispatch event via GitHub 
 
 runs:
   using: composite
+  env:
+    RUN_BRANCHES_ON_PREVIOUS_MAJOR: false
   steps:
 
     - name: Get type
@@ -27,7 +29,24 @@ runs:
           # previous major, next-patch e.g. "4.13"
           type=previous,next-patch
         fi
+
+        # tmp
+        type=previous,next-patch
+        
         echo "type=$type" >> $GITHUB_OUTPUT
+
+    - name: Check if should dispatch workflow
+      shell: bash
+      env:
+        TYPE: ${{ steps.gettype.outputs.type }}
+      run:
+        major_type=$(echo $TYPE | cut -d "," -f 1)
+        if [[ $RUN_BRANCHES_ON_PREVIOUS_MAJOR == 'false' ]] && [[ $major_type == "previous" ]]; then
+          echo "Workflow is configured to not dispatch workflow for branches on previous major. Exiting."
+          exit 0
+        else
+          echo "Workflow is configured to dispatch workflow for branches on previous major"
+        fi
 
     - name: Get branch
       id: getbranch
