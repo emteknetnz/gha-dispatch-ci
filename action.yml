@@ -29,6 +29,18 @@ runs:
         fi
         echo "type=$type" >> $GITHUB_OUTPUT
 
+    - name: Check if should dispatch workflow
+      shell: bash
+      env:
+        RUN_BRANCHES_ON_PREVIOUS_MAJOR: "false"
+        TYPE: ${{ steps.gettype.outputs.type }}
+      run: |
+        major_type=$(echo $TYPE | cut -d "," -f 1)
+        if [[ $RUN_BRANCHES_ON_PREVIOUS_MAJOR == "false" ]] && [[ $major_type == "previous" ]]; then
+          echo "Workflow is configured to not dispatch workflow for branches on previous major. Exiting."
+          exit 0
+        fi
+
     - name: Get branch
       id: getbranch
       shell: bash
