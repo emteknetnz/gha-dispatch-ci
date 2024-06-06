@@ -30,6 +30,7 @@ runs:
         echo "type=$type" >> $GITHUB_OUTPUT
 
     - name: Check if should dispatch workflow
+      id: checkshoulddispatch
       shell: bash
       env:
         RUN_BRANCHES_ON_PREVIOUS_MAJOR: "false"
@@ -38,11 +39,14 @@ runs:
         major_type=$(echo $TYPE | cut -d "," -f 1)
         if [[ $RUN_BRANCHES_ON_PREVIOUS_MAJOR == "false" ]] && [[ $major_type == "previous" ]]; then
           echo "Workflow is configured to not dispatch workflow for branches on previous major. Exiting."
+          echo "do_dispatch=false" >> $GITHUB_OUTPUT
           exit 0
         fi
+        echo "do_dispatch=true" >> $GITHUB_OUTPUT
 
     - name: Get branch
       id: getbranch
+      if: steps.checkshoulddispatch.outputs.do_dispatch == 'true'
       shell: bash
       env:
         TYPE: ${{ steps.gettype.outputs.type }}
@@ -119,6 +123,7 @@ runs:
         echo "branch=$branch" >> $GITHUB_OUTPUT
 
     - name: Send API request
+      if: steps.checkshoulddispatch.outputs.do_dispatch == 'true'
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
