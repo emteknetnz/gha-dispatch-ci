@@ -4,56 +4,41 @@ description: GitHub Action to trigger ci.yml workflow_dispatch event via GitHub 
 runs:
   using: composite
   steps:
-
-    - name: Get type
-      id: gettype
+    - name: Derive types
+      id: types
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        # repository that has a twice-weekly schedule run on consecutive days - use day of year
-        date_part=$(date +%-j)
-        type=""
+        # Repository that has a twice-weekly schedule run on consecutive days - use day of year
+        DATE_PART=$(date +%-j)
+        MAJOR_TYPE=""
+        MINOR_TYPE=""
         if [[ $GITHUB_REPOSITORY == "silverstripe/installer" ]] || \
             [[ $GITHUB_REPOSITORY == "silverstripe/recipe-kitchen-sink" ]]
         then
-          # respository that has daily schedule - use hour
-          date_part=$(date +%H)
+          # Respository that has daily schedule - use hour
+          DATE_PART=$(date +%H)
         fi
-        if (( $date_part % 2 == 1 )); then
-          # current major, next-minor e.g. "5"
-          type=current,next-minor
+        if (( $DATE_PART % 2 == 1 )); then
+          # Current major, next-minor e.g. "6"
+          MAJOR_TYPE="current"
+          MINOR_TYPE="next-minor"
         else
-          # previous major, next-patch e.g. "4.13"
-          type=previous,next-patch
+          # Previous major, next-patch e.g. "5.4"
+          MAJOR_TYPE="previous"
+          MINOR_TYPE="next-patch"
         fi
-        echo "type=$type" >> $GITHUB_OUTPUT
+        echo "MAJOR_TYPE is $MAJOR_TYPE"
+        echo "MINOR_TYPE is $MINOR_TYPE"
+        echo "major_type=$MAJOR_TYPE" >> $GITHUB_OUTPUT
+        echo "minor_type=$MINOR_TYPE" >> $GITHUB_OUTPUT
 
-    - name: Check if should dispatch workflow
-      id: checkshoulddispatch
+    - name: Fetch repo branches
       shell: bash
       env:
-        RUN_BRANCHES_ON_PREVIOUS_MAJOR: "false"
-        TYPE: ${{ steps.gettype.outputs.type }}
-      run: |
-        major_type=$(echo $TYPE | cut -d "," -f 1)
-        if [[ $RUN_BRANCHES_ON_PREVIOUS_MAJOR == "false" ]] && [[ $major_type == "previous" ]]; then
-          echo "Workflow is configured to not dispatch workflow for branches on previous major. Exiting."
-          echo "do_dispatch=false" >> $GITHUB_OUTPUT
-          exit 0
-        fi
-        echo "do_dispatch=true" >> $GITHUB_OUTPUT
-
-    - name: Get branch
-      id: getbranch
-      if: steps.checkshoulddispatch.outputs.do_dispatch == 'true'
-      shell: bash
-      env:
-        TYPE: ${{ steps.gettype.outputs.type }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        major_type=$(echo $TYPE | cut -d "," -f 1)
-        minor_type=$(echo $TYPE | cut -d "," -f 2)
         # https://docs.github.com/en/rest/branches/branches#list-branches
         RESP_CODE=$(curl -w %{http_code} -s -L -o __branches.json \
           -H "Accept: application/vnd.github+json" \
@@ -65,6 +50,13 @@ runs:
           echo "Failed to list branches - HTTP response code was $RESP_CODE"
           exit 1
         fi
+
+    - name: Fetch repo tags
+      shell: bash
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+      run: |
+        # https://docs.github.com/en/rest/git/tags
         RESP_CODE=$(curl -w %{http_code} -s -L -o __tags.json \
           -H "Accept: application/vnd.github+json" \
           -H "Authorization: Bearer ${{ github.token }}" \
@@ -75,59 +67,199 @@ runs:
           echo "Failed to list tags - HTTP response code was $RESP_CODE"
           exit 1
         fi
-        major_branch=""
-        minor_branch=""
-        major_branches=$(jq -r '.[] | select(.name | test("^[0-9]+$")) | .name' __branches.json | sort -V -r)
-        # "major_branches" needs to be quoted to preserve line-breaks
-        major_branches_count=$(echo "$major_branches" | wc -l)
-        if (( $major_branches_count < 1 )); then
-          echo "No major branches found, cannot continue"
+
+    - name: Fetch framework branches
+      shell: bash
+      run: |
+        # https://docs.github.com/en/rest/branches/branches?apiVersion=2022-11-28#list-branches
+        RESP_CODE=$(curl -w %{http_code} -s -L -o __framework_branches.json \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ github.token }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/silverstripe/silverstripe-framework/branches?per_page=100
+        )
+        if [[ $RESP_CODE != "200" ]]; then
+          echo "Failed to get list of branches - HTTP response code was $RESP_CODE"
+          cat __framework_branches.json
           exit 1
         fi
-        latest_major_branch=$(echo "$major_branches" | head -1)
-        latest_major_stable_tags_count=0
-        # not escaping rx . as \. because jq will say it is a compile error
-        latest_major_stable_tags=$(jq -r ".[] | select(.name | test(\"^$latest_major_branch.[0-9]+.[0-9]+$\")) | .name" __tags.json | sort -V -r)
-        if [[ "$latest_major_stable_tags" != "" ]]; then
-          latest_major_stable_tags_count=$(echo "$latest_major_stable_tags" | wc -l)
+
+    - name: Fetch framework tags
+      shell: bash
+      run: |
+        # Gets 200 most recently created framework tags from GitHub API
+        # https://docs.github.com/en/rest/repos/repos?apiVersion=2022-11-28#list-repository-tags
+        RESP_CODE=$(curl -w %{http_code} -s -o __framework_tags.json \
+          -X GET "https://api.github.com/repos/silverstripe/silverstripe-framework/tags?per_page=100" \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ github.token }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+        )
+        if [[ $RESP_CODE != "200" ]]; then
+          echo "Unable to read list of tags - HTTP response code was $RESP_CODE"
+          cat __framework_tags.json
+          exit 1
         fi
-        if [[ $major_type == "current" ]]; then
-          major_branch=$(echo "$major_branches" | head -1)
-          if (( $latest_major_stable_tags_count == 0 )) && (( $major_branches_count >= 2 )); then
-            major_branch=$(echo "$major_branches" | head -2 | tail -1)
-          fi
-        elif [[ $major_type == "previous" ]]; then
-          if (( $major_branches_count < 2 )); then
-            echo "Only one major branch found, not running CI on this cycle - will run on next cycle"
-            exit 0
-          fi
-          major_branch=$(echo "$major_branches" | head -2 | tail -1)
-          if (( $latest_major_stable_tags_count == 0 )) && (( $major_branches_count >= 3 )); then
-            major_branch=$(echo "$major_branches" | head -3 | tail -1)
-          fi
-        fi
-        if [[ $minor_type == "next-patch" ]]; then
-          minor_branches=$(jq -r ".[] | select(.name | test(\"^$major_branch.[0-9]+$\")) | .name" __branches.json | sort -V -r)
-          minor_branches_count=$(echo "$minor_branches" | wc -l)
-          if (( $minor_branches_count == 0 )); then
-            echo "No minor branches found on major branch $major_branch when minor_type is next-patch, cannot continue"
+        # Parse the "link" HTTP header to see if there's a next page of tags
+        NEXT_LINK=$(curl -I -s \
+          -X HEAD "https://api.github.com/repos/silverstripe/silverstripe-framework/tags?per_page=100" \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ github.token }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          | sed -n -E 's/link:.*<(.*?)>; rel="next".*/\1/p'
+        )
+        if [[ $NEXT_LINK != "" ]]; then
+          # Get the next 100 tags just in case (sometimes needed at the end of a major release line cycle)
+          RESP_CODE=$(curl -w %{http_code} -s -o __framework_tags2.json \
+            -X GET "${NEXT_LINK}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+          )
+          if [[ $RESP_CODE != "200" ]]; then
+            echo "Unable to read second page of tags - HTTP response code was $RESP_CODE"
+            cat __framework_tags2.json
             exit 1
           fi
-          minor_branch=$(echo "$minor_branches" | head -1)
+          # Combine the two json files
+          jq -s '.[0] + .[1]' __framework_tags.json __framework_tags2.json > __framework_tags3.json
+          rm __framework_tags.json
+          rm __framework_tags2.json
+          mv __framework_tags3.json __framework_tags.json
         fi
-        branch=$major_branch
-        if [[ $minor_branch != "" ]]; then
-          branch="$minor_branch"
-        fi
-        echo "branch is $branch"
-        echo "branch=$branch" >> $GITHUB_OUTPUT
 
-    - name: Send API request
-      if: steps.checkshoulddispatch.outputs.do_dispatch == 'true'
+    - name: Derive framework status
+      id: frameworkstatus
+      shell: bash
+      run: |
+        # Get the highest currently supported framework major version
+        FRAMEWORK_HIGHEST_MAJOR=$(jq -r '.supportedModules[] | select(.packagist == "silverstripe/framework") | .majorVersionMapping | keys[]' __repositories.json | tail -n 1)
+        echo "FRAMEWORK_HIGHEST_MAJOR is $FRAMEWORK_HIGHEST_MAJOR"
+        # Get the highest supported framework minor branch for the highest minor
+        FRAMEWORK_HIGHEST_MINOR=$(jq -r --arg framework_highest_major "$FRAMEWORK_HIGHEST_MAJOR" '[ .[] | select(.name | test("^" + $framework_highest_major + "\\.\\d+$")) | .name ] | sort_by(split(".") | .[1] | tonumber) | .[-1]' __framework_branches.json | cut -d'.' -f2)
+        rm __framework_branches.json
+        echo "FRAMEWORK_HIGHEST_MINOR is $FRAMEWORK_HIGHEST_MINOR"
+        # Check if there is y.2.0 tag for the current supported major version of framework
+        FRAMEWORK_TWO_TAG_EXISTS=0
+        TWO_TAG=$(jq -r --arg framework_supported_major "$FRAMEWORK_SUPPORTED_MAJOR" '.[] | select(.name == $framework_supported_major + ".2.0")' __framework_tags.json)
+        rm __framework_tags.json
+        if [[ $TWO_TAG != "" ]]; then
+          FRAMEWORK_TWO_TAG_EXISTS=1
+        fi
+        echo "FRAMEWORK_TWO_TAG_EXISTS is $FRAMEWORK_TWO_TAG_EXISTS"
+        echo "framework_two_tag_exists=$FRAMEWORK_TWO_TAG_EXISTS" >> "$GITHUB_OUTPUT"
+
+    - name: Derive module map
+      id: modulemap
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
-        REF: ${{ steps.getbranch.outputs.branch }}
+      run: |
+        RESP_CODE=$(curl -w %{http_code} -s -L -o __repositories.json \
+          https://raw.githubusercontent.com/silverstripe/supported-modules/refs/heads/main/repositories.json
+        )
+        if [[ $RESP_CODE != "200" ]]; then
+          echo "Failed to fetch repositories.json - HTTP response code was $RESP_CODE"
+          cat __repositories.json
+          exit 1
+        fi
+        # Create a module map of { module_major: cms_version }
+        # e.g. for silverstripe/admin it will be { "1": "4", "2": "5", "3": "6" }
+        MODULE_MAP=$(jq -r --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
+        rm __repositories.json
+        echo "MODULE_MAP is $MODULE_MAP"
+        echo "module_map=$MODULE_MAP" >> $GITHUB_OUTPUT
+
+    - name: Derive branches
+      id: branches
+      shell: bash
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
+        MINOR_TYPE: ${{ steps.gettype.outputs.minor_type }}
+        MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
+      run: |
+        MAJOR_BRANCH=""
+        MINOR_BRANCH=""
+        MAJOR_BRANCHES=$(jq -r '.[] | select(.name | test("^[0-9]+$")) | .name' __branches.json | sort -V -r)
+        # "major_branches" needs to be quoted to preserve line-breaks
+        MAJOR_BRANCHES_COUNT=$(echo "$MAJOR_BRANCHES" | wc -l)
+        if (( $MAJOR_BRANCHES_COUNT < 1 )); then
+          echo "No major branches found, cannot continue"
+          exit 1
+        fi
+        LATEST_MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -1)
+        LATEST_MAJOR_STABLE_TAGS_COUNT=0
+        LATEST_MAJOR_STABLE_TAGS=$(jq -r --arg latest_major_branch "$LATEST_MAJOR_BRANCH" '.[] | select(.name | test($latest_major_branch + "\\.[0-9]+\\.[0-9]+$")) | .name' __tags.json | sort -V -r)
+        if [[ "$LATEST_MAJOR_STABLE_TAGS" != "" ]]; then
+          LATEST_MAJOR_STABLE_TAGS_COUNT=$(echo "$LATEST_MAJOR_STABLE_TAGS" | wc -l)
+        fi
+        if [[ $MAJOR_TYPE == "current" ]]; then
+          MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -1)
+          if (( $LATEST_MAJOR_STABLE_TAGS_COUNT == 0 )) && (( $MAJOR_BRANCHES_COUNT >= 2 )); then
+            MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -2 | tail -1)
+          fi
+        elif [[ $MAJOR_TYPE == "previous" ]]; then
+          if (( $MAJOR_BRANCHES_COUNT < 2 )); then
+            echo "Only one major branch found, not running CI on this cycle - will run on next cycle"
+            exit 0
+          fi
+          MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -2 | tail -1)
+          if (( $LATEST_MAJOR_STABLE_TAGS_COUNT == 0 )) && (( $MAJOR_BRANCHES_COUNT >= 3 )); then
+            MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -3 | tail -1)
+          fi
+        fi
+        if [[ $MINOR_TYPE == "next-patch" ]]; then
+          MINOR_BRANCHES=$(jq -r --arg major_branch "$MAJOR_BRANCH" '.[] | select(.name | test("^" + $major_branch + "\\.[0-9]+$")) | .name' __branches.json | sort -V -r)
+          MINOR_BRANCHES_COUNT=$(echo "$MINOR_BRANCHES" | wc -l)
+          if (( $MINOR_BRANCHES_COUNT == 0 )); then
+            echo "No minor branches found on major branch $MAJOR_BRANCH when MINOR_TYPE is next-patch, cannot continue"
+            exit 1
+          fi
+          MINOR_BRANCH=$(echo "$MINOR_BRANCHES" | head -1)
+        fi
+        BRANCH=$MAJOR_BRANCH
+        if [[ $MINOR_BRANCH != "" ]]; then
+          BRANCH="$MINOR_BRANCH"
+        fi
+        echo "MAJOR_BRANCH is $MAJOR_BRANCH"
+        echo "BRANCH is $BRANCH"
+        echo "major_branch=$MAJOR_BRANCH" >> $GITHUB_OUTPUT
+        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+    - name: Derive should dispatch
+      id: shoulddispatch
+      shell: bash
+      env:
+        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
+        MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
+        FRAMEWORK_TWO_TAG_EXISTS: ${{ steps.frameworkstatus.outputs.framework_two_tag_exists }}
+        MAJOR_BRANCH: ${{ steps.getbranch.outputs.major_branch }}
+        BRANCH: ${{ steps.branches.outputs.branch }}
+      run: |
+        SHOULD_DISPATCH=1
+        if [[ $BRANCH == "" ]]; then
+          echo "No appropriate branch found, CI will not be run"
+          SHOULD_DISPATCH=0
+        fi
+        CMS_VERSION=$(echo "$MODULE_MAP" | jq --arg major_branch "$MAJOR_BRANCH" '.[$major_branch] | tonumber')
+        if [[ $CMS_VERSION == "" ]]; then
+          echo "Major $major_branch is not supported, CI will not be run"
+          SHOULD_DISPATCH=0
+        fi
+        if [[ $FRAMEWORK_TWO_TAG_EXISTS == "1" ]] && [[ $MAJOR_TYPE == "previous" ]]; then
+          echo "Major $major_branch is no longer supported, CI will not be run"
+          SHOULD_DISPATCH=0
+        fi
+        echo "SHOULD_DISPATCH is $SHOULD_DISPATCH"
+        echo "should_dispatch=$SHOULD_DISPATCH" >> $GITHUB_OUTPUT
+
+    - name: Send API request
+      if: steps.shoulddispatch.outputs.should_dispatch == '1'
+      shell: bash
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        BRANCH: ${{ steps.branches.outputs.branch }}
       run: |
         # https://docs.github.com/en/rest/actions/workflows?apiVersion=2022-11-28#create-a-workflow-dispatch-event
         RESP_CODE=$(curl -w %{http_code} -s -L -o /dev/null \
@@ -136,7 +268,7 @@ runs:
           -H "Authorization: Bearer ${{ github.token }}"\
           -H "X-GitHub-Api-Version: 2022-11-28" \
           https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/dispatches \
-          -d "{\"ref\":\"$REF\"}"
+          -d "{\"ref\":\"$BRANCH\"}"
         )
         if [[ $RESP_CODE != "204" ]]; then
           echo "Failed to dispatch workflow - HTTP response code was $RESP_CODE"
@@ -152,4 +284,19 @@ runs:
         fi
         if [[ -f __tags.json ]]; then
           rm __tags.json
+        fi
+        if [[ -f __framework_branches.json ]]; then
+          rm __framework_branches.json
+        fi
+        if [[ -f __framework_tags.json ]]; then
+          rm __framework_tags.json
+        fi
+        if [[ -f __framework_tags2.json ]]; then
+          rm __framework_tags2.json
+        fi
+        if [[ -f __framework_tags3.json ]]; then
+          rm __framework_tags3.json
+        fi
+        if [[ -f __repositories.json ]]; then
+          rm __repositories.json
         fi
