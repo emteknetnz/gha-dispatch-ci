@@ -34,6 +34,18 @@ runs:
         echo "major_type=$MAJOR_TYPE" >> $GITHUB_OUTPUT
         echo "minor_type=$MINOR_TYPE" >> $GITHUB_OUTPUT
 
+    - name: Fetch supported modules
+      shell: bash
+      run: |
+        RESP_CODE=$(curl -w %{http_code} -s -L -o __repositories.json \
+          https://raw.githubusercontent.com/silverstripe/supported-modules/refs/heads/main/repositories.json
+        )
+        if [[ $RESP_CODE != "200" ]]; then
+          echo "Failed to fetch repositories.json - HTTP response code was $RESP_CODE"
+          cat __repositories.json
+          exit 1
+        fi
+
     - name: Fetch repo branches
       shell: bash
       env:
@@ -155,14 +167,6 @@ runs:
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        RESP_CODE=$(curl -w %{http_code} -s -L -o __repositories.json \
-          https://raw.githubusercontent.com/silverstripe/supported-modules/refs/heads/main/repositories.json
-        )
-        if [[ $RESP_CODE != "200" ]]; then
-          echo "Failed to fetch repositories.json - HTTP response code was $RESP_CODE"
-          cat __repositories.json
-          exit 1
-        fi
         # Create a module map of { module_major: cms_version }
         # e.g. for silverstripe/admin it will be { "1": "4", "2": "5", "3": "6" }
         MODULE_MAP=$(jq -r --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
