@@ -259,7 +259,7 @@ runs:
         echo "should_dispatch=$SHOULD_DISPATCH" >> $GITHUB_OUTPUT
 
     - name: Send API request
-      if: steps.shoulddispatch.outputs.should_dispatch == '1' && never()
+      if: steps.shoulddispatch.outputs.should_dispatch == '1' && '1' == '0'
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
