@@ -8,7 +8,7 @@ runs:
       id: types
       shell: bash
       env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
       run: |
         # Repository that has a twice-weekly schedule run on consecutive days - use day of year
         DATE_PART=$(date +%-j)
@@ -49,7 +49,7 @@ runs:
     - name: Fetch repo branches
       shell: bash
       env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
       run: |
         # https://docs.github.com/en/rest/branches/branches#list-branches
         RESP_CODE=$(curl -w %{http_code} -s -L -o __branches.json \
@@ -66,7 +66,7 @@ runs:
     - name: Fetch repo tags
       shell: bash
       env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
       run: |
         # https://docs.github.com/en/rest/git/tags
         RESP_CODE=$(curl -w %{http_code} -s -L -o __tags.json \
@@ -165,7 +165,7 @@ runs:
       id: modulemap
       shell: bash
       env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
       run: |
         # Create a module map of { module_major: cms_version }
         # e.g. for silverstripe/admin it will be { "1": "4", "2": "5", "3": "6" }
@@ -178,7 +178,7 @@ runs:
       id: branches
       shell: bash
       env:
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
         MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
         MINOR_TYPE: ${{ steps.gettype.outputs.minor_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
@@ -259,7 +259,7 @@ runs:
         echo "should_dispatch=$SHOULD_DISPATCH" >> $GITHUB_OUTPUT
 
     - name: Send API request
-      if: steps.shoulddispatch.outputs.should_dispatch == '1'
+      if: steps.shoulddispatch.outputs.should_dispatch == '1' && never()
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
