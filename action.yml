@@ -180,8 +180,8 @@ runs:
       shell: bash
       env:
         GITHUB_REPOSITORY: silverstripe/silverstripe-campaign-admin
-        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
-        MINOR_TYPE: ${{ steps.gettype.outputs.minor_type }}
+        MAJOR_TYPE: ${{ steps.types.outputs.major_type }}
+        MINOR_TYPE: ${{ steps.types.outputs.minor_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
       run: |
         MAJOR_BRANCH=""
@@ -236,7 +236,7 @@ runs:
       id: shoulddispatch
       shell: bash
       env:
-        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
+        MAJOR_TYPE: ${{ steps.types.outputs.major_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
         FRAMEWORK_TWO_TAG_EXISTS: ${{ steps.frameworkstatus.outputs.framework_two_tag_exists }}
         MAJOR_BRANCH: ${{ steps.getbranch.outputs.major_branch }}
