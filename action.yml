@@ -169,7 +169,7 @@ runs:
       run: |
         # Create a module map of { module_major: cms_version }
         # e.g. for silverstripe/admin it will be { "1": "4", "2": "5", "3": "6" }
-        MODULE_MAP=$(jq -r --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
+        MODULE_MAP=$(jq -r -c --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
         rm __repositories.json
         echo "MODULE_MAP is $MODULE_MAP"
         echo "module_map=$MODULE_MAP" >> $GITHUB_OUTPUT
@@ -179,8 +179,8 @@ runs:
       shell: bash
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
-        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
-        MINOR_TYPE: ${{ steps.gettype.outputs.minor_type }}
+        MAJOR_TYPE: ${{ steps.types.outputs.major_type }}
+        MINOR_TYPE: ${{ steps.types.outputs.minor_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
       run: |
         MAJOR_BRANCH=""
@@ -235,10 +235,10 @@ runs:
       id: shoulddispatch
       shell: bash
       env:
-        MAJOR_TYPE: ${{ steps.gettype.outputs.major_type }}
+        MAJOR_TYPE: ${{ steps.types.outputs.major_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
         FRAMEWORK_TWO_TAG_EXISTS: ${{ steps.frameworkstatus.outputs.framework_two_tag_exists }}
-        MAJOR_BRANCH: ${{ steps.getbranch.outputs.major_branch }}
+        MAJOR_BRANCH: ${{ steps.branches.outputs.major_branch }}
         BRANCH: ${{ steps.branches.outputs.branch }}
       run: |
         SHOULD_DISPATCH=1
