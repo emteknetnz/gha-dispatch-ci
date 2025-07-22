@@ -239,7 +239,7 @@ runs:
         MAJOR_TYPE: ${{ steps.types.outputs.major_type }}
         MODULE_MAP: ${{ steps.modulemap.outputs.module_map }}
         FRAMEWORK_TWO_TAG_EXISTS: ${{ steps.frameworkstatus.outputs.framework_two_tag_exists }}
-        MAJOR_BRANCH: ${{ steps.getbranch.outputs.major_branch }}
+        MAJOR_BRANCH: ${{ steps.branches.outputs.major_branch }}
         BRANCH: ${{ steps.branches.outputs.branch }}
       run: |
         SHOULD_DISPATCH=1
