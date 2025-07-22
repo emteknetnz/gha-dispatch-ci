@@ -169,7 +169,8 @@ runs:
       run: |
         # Create a module map of { module_major: cms_version }
         # e.g. for silverstripe/admin it will be { "1": "4", "2": "5", "3": "6" }
-        MODULE_MAP=$(jq -r --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
+        echo "GITHUB_REPOSITORY is $GITHUB_REPOSITORY"
+        MODULE_MAP=$(jq -r -c --arg github_repository "$GITHUB_REPOSITORY" '.supportedModules[] | select(.github == $github_repository) | .majorVersionMapping | to_entries | map({key: .value[0], value: .key}) | from_entries' __repositories.json)
         rm __repositories.json
         echo "MODULE_MAP is $MODULE_MAP"
         echo "module_map=$MODULE_MAP" >> $GITHUB_OUTPUT
