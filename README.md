@@ -38,3 +38,13 @@ jobs:
       - name: Dispatch CI
         uses: silverstripe/gha-dispatch-ci@v1
 ```
+
+### Inputs:
+
+#### Major Type
+The major version type to target, can be `dynamic`, `current`, `next`, `previous`. Default is `dynamic`.
+`major_type: current`
+
+#### Minor Type
+The minor version type to target, can be `dynamic`, `next-minor`, `next-patch`. Default is `dynamic`.
+`minor_type: next-minor`

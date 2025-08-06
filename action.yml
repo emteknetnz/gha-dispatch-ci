@@ -1,33 +1,76 @@
 name: Dispatch CI
 description: GitHub Action to trigger ci.yml workflow_dispatch event via GitHub API
 
+inputs:
+  major_type:
+    type: string
+    required: false
+    default: 'dynamic'
+  minor_type:
+    type: string
+    required: false
+    default: 'dynamic'
+
 runs:
   using: composite
   steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        INPUTS_MAJOR_TYPE: ${{ inputs.major_type }}
+        INPUTS_MINOR_TYPE: ${{ inputs.minor_type }}
+      run: |
+        if [[ $INPUTS_MAJOR_TYPE != "dynamic" ]] && \
+          [[ $INPUTS_MAJOR_TYPE != "current" ]] && \
+          [[ $INPUTS_MAJOR_TYPE != "next" ]] && \
+          [[ $INPUTS_MAJOR_TYPE != "previous" ]]
+        then
+          echo "Invalid input major_type"
+          exit 1
+        fi
+        if [[ $INPUTS_MINOR_TYPE != "dynamic" ]] && \
+          [[ $INPUTS_MINOR_TYPE != "next-minor" ]] && \
+          [[ $INPUTS_MINOR_TYPE != "next-patch" ]]
+        then
+          echo "Invalid input minor_type"
+          exit 1
+        fi
+
     - name: Derive types
       id: types
       shell: bash
       env:
+        INPUTS_MINOR_TYPE: ${{ inputs.minor_type }}
+        INPUTS_MAJOR_TYPE: ${{ inputs.major_type }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
-        # Repository that has a twice-weekly schedule run on consecutive days - use day of year
+        # Repositories run on a three times weekly schedule run on consecutive days
+        # Get the current day of year (e.g. Feb 15 is 46) which will be used for a mod calc below
         DATE_PART=$(date +%-j)
         MAJOR_TYPE=""
         MINOR_TYPE=""
-        if [[ $GITHUB_REPOSITORY == "silverstripe/installer" ]] || \
-            [[ $GITHUB_REPOSITORY == "silverstripe/recipe-kitchen-sink" ]]
-        then
-          # Respository that has daily schedule - use hour
-          DATE_PART=$(date +%H)
-        fi
-        if (( $DATE_PART % 2 == 1 )); then
+        if (( $DATE_PART % 3 == 1 )); then
           # Current major, next-minor e.g. "6"
           MAJOR_TYPE="current"
           MINOR_TYPE="next-minor"
+        elif (( $DATE_PART % 3 == 2 )); then
+          # Current major, next-patch e.g. "6.0"
+          MAJOR_TYPE="current"
+          MINOR_TYPE="next-patch"
         else
           # Previous major, next-patch e.g. "5.4"
           MAJOR_TYPE="previous"
           MINOR_TYPE="next-patch"
+        fi
+        echo "dynamic MAJOR_TYPE is $MAJOR_TYPE"
+        echo "dynamic MINOR_TYPE is $MINOR_TYPE"
+        if [[ "$INPUTS_MAJOR_TYPE" != 'dynamic' ]]; then
+          echo "Using input override $INPUTS_MAJOR_TYPE for MAJOR_TYPE"
+          MAJOR_TYPE="$INPUTS_MAJOR_TYPE"
+        fi
+        if [[ "$INPUTS_MINOR_TYPE" != 'dynamic' ]]; then
+          echo "Using input override $INPUTS_MINOR_TYPE for MINOR_TYPE"
+          MINOR_TYPE="$INPUTS_MINOR_TYPE"
         fi
         echo "MAJOR_TYPE is $MAJOR_TYPE"
         echo "MINOR_TYPE is $MINOR_TYPE"
@@ -205,12 +248,23 @@ runs:
           fi
         elif [[ $MAJOR_TYPE == "previous" ]]; then
           if (( $MAJOR_BRANCHES_COUNT < 2 )); then
-            echo "Only one major branch found, not running CI on this cycle - will run on next cycle"
+            echo "Only one major branch found, not running CI on this cycle - will run on a future cycle"
             exit 0
           fi
           MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -2 | tail -1)
           if (( $LATEST_MAJOR_STABLE_TAGS_COUNT == 0 )) && (( $MAJOR_BRANCHES_COUNT >= 3 )); then
             MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -3 | tail -1)
+          fi
+        elif [[ $MAJOR_TYPE == "next" ]]; then
+          if (( $MAJOR_BRANCHES_COUNT < 2 )); then
+            echo "Only one major branch found, not running CI on this cycle - will run on a future cycle"
+            exit 0
+          fi
+          if (( $LATEST_MAJOR_STABLE_TAGS_COUNT == 0 )); then
+            MAJOR_BRANCH=$(echo "$MAJOR_BRANCHES" | head -1)
+          else
+            echo "The latest major branch has stable tags on it, not running CI on this cycle - will run on a future cycle"
+            exit 0
           fi
         fi
         if [[ $MINOR_TYPE == "next-patch" ]]; then
@@ -227,6 +281,7 @@ runs:
           BRANCH="$MINOR_BRANCH"
         fi
         echo "MAJOR_BRANCH is $MAJOR_BRANCH"
+        echo "MINOR_BRANCH is $MINOR_BRANCH"
         echo "BRANCH is $BRANCH"
         echo "major_branch=$MAJOR_BRANCH" >> $GITHUB_OUTPUT
         echo "branch=$BRANCH" >> $GITHUB_OUTPUT
