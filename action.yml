@@ -20,6 +20,12 @@ runs:
         INPUTS_MAJOR_TYPE: ${{ inputs.major_type }}
         INPUTS_MINOR_TYPE: ${{ inputs.minor_type }}
       run: |
+        if [[ $INPUTS_MAJOR_TYPE == "" ]]; then
+          INPUTS_MAJOR_TYPE='dynamic'
+        fi
+        if [[ $INPUTS_MINOR_TYPE == "" ]]; then
+          INPUTS_MINOR_TYPE='dynamic'
+        fi
         if [[ $INPUTS_MAJOR_TYPE != "dynamic" ]] && \
           [[ $INPUTS_MAJOR_TYPE != "current" ]] && \
           [[ $INPUTS_MAJOR_TYPE != "next" ]] && \
