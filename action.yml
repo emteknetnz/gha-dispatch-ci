@@ -20,13 +20,8 @@ runs:
         INPUTS_MAJOR_TYPE: ${{ inputs.major_type }}
         INPUTS_MINOR_TYPE: ${{ inputs.minor_type }}
       run: |
-        if [[ $INPUTS_MAJOR_TYPE == "" ]]; then
-          INPUTS_MAJOR_TYPE='dynamic'
-        fi
-        if [[ $INPUTS_MINOR_TYPE == "" ]]; then
-          INPUTS_MINOR_TYPE='dynamic'
-        fi
-        if [[ $INPUTS_MAJOR_TYPE != "dynamic" ]] && \
+        if [[ $INPUTS_MAJOR_TYPE != "" ]] && \
+          [[ $INPUTS_MAJOR_TYPE != "dynamic" ]] && \
           [[ $INPUTS_MAJOR_TYPE != "current" ]] && \
           [[ $INPUTS_MAJOR_TYPE != "next" ]] && \
           [[ $INPUTS_MAJOR_TYPE != "previous" ]]
@@ -34,7 +29,8 @@ runs:
           echo "Invalid input major_type"
           exit 1
         fi
-        if [[ $INPUTS_MINOR_TYPE != "dynamic" ]] && \
+        if [[ $INPUTS_MINOR_TYPE != "" ]] && \
+          [[ $INPUTS_MINOR_TYPE != "dynamic" ]] && \
           [[ $INPUTS_MINOR_TYPE != "next-minor" ]] && \
           [[ $INPUTS_MINOR_TYPE != "next-patch" ]]
         then
@@ -50,6 +46,14 @@ runs:
         INPUTS_MAJOR_TYPE: ${{ inputs.major_type }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
+        # Inputs will normally be blank as this action is called in a modules dispatch.yml with inputs arguments
+        # though without values when started on a schedule
+        if [[ $INPUTS_MAJOR_TYPE == "" ]]; then
+          INPUTS_MAJOR_TYPE='dynamic'
+        fi
+        if [[ $INPUTS_MINOR_TYPE == "" ]]; then
+          INPUTS_MINOR_TYPE='dynamic'
+        fi
         # Repositories run on a three times weekly schedule run on consecutive days
         # Get the current day of year (e.g. Feb 15 is 46) which will be used for a mod calc below
         DATE_PART=$(date +%-j)
